@@ -10,10 +10,13 @@ from datetime import datetime
 from openai import OpenAI
 # from deep_translator import GoogleTranslator
 from gtts import gTTS
+from dotenv import load_dotenv
 
-client = 
+load_dotenv()
 
-deepl_auth_key = 
+client = OpenAI(api_key = os.getenv("OPEN_AI_KEY"))
+
+deepl_auth_key = os.getenv("DEEPL_KEY")
 translator = deepl.Translator(deepl_auth_key)
 
 # to setup run

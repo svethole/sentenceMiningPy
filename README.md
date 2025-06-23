@@ -20,14 +20,15 @@ Stuff you need to install
 The script makes use of OpenAI to generate images and DeepL for translation. Unfortunately, the OpenAI key is not free but inexpensive.
 * create an account at https://openai.com/api/
 * visit the Dashboard
-* go to the API keys section, create your key and insert the string in the ```sentenceMining.py``` file where it says ```client = OpenAI(api_key='<YOUR API KEY HERE>')```
-* unfortunately this has to be done in the script itself, sorry I just couldn't be arsed to outsource it. Be my guest if you feel like adjusting the script! :-)
+* open the file called ```environment``` in the root folder of the script
+* insert the key on the right side of the equal sign for ```OPEN_AI_KEY``` (no quotes needed)
+* rename the ```environment``` file you just edited to ```.env```, this will hide the file; it will be read automatically and its values imported into the script
 
 Next, you need your DeepL API key. This one's for free for up 500.000 characters per month, which has always been enough for me so far.
 * create an account at http://deepl.com
 * go to your account page and from there to API keys & limits
 * create your key, copy it and insert it in the script file as value for ```deepl_auth_key```
-* à propos outsourcing the key, same applies as for the OpenAI key
+* open the ```.env``` from above and insert your ```DEEPL_KEY``` likewise
 
 ### adjusting the config
 There are two pre-made config files that need to be renamed ```sentenceMining.config```. 
