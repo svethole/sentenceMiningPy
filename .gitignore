@@ -1,4 +1,5 @@
 # custom
+.DS_Store
 .env
 output/
 output-debug/
