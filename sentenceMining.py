@@ -8,33 +8,39 @@ import deepl
 import random, string
 from datetime import datetime
 from openai import OpenAI
-# from deep_translator import GoogleTranslator
 from gtts import gTTS
 from dotenv import load_dotenv
 
-load_dotenv()
-
-client = OpenAI(api_key = os.getenv("OPEN_AI_KEY"))
-
-deepl_auth_key = os.getenv("DEEPL_KEY")
-translator = deepl.Translator(deepl_auth_key)
-
-# to setup run
-#   python3 -m venv openai-env
-#   source openai-env/bin/activate
-#   pip install openai deep_translator gtts configparser deepl
-
-# OpenAI API key configuration
-
-# Translate helper
-# translator = GoogleTranslator(source='da', target='en')
-
-debug = False
-
 CONFIG_FILE = "sentenceMining.config"
 
+# get secrets
+load_dotenv()
+client = OpenAI(api_key = os.getenv("OPEN_AI_KEY"))
+translator = deepl.Translator(os.getenv("DEEPL_KEY"))
+
+DEBUG = os.getenv("DEBUG")
+
 # regex to strip XML tags
-CLEANR = re.compile('<.*?>') 
+CLEANR = re.compile('<.*?>')
+
+config = {}
+
+def get_config(config_filename):
+    if not os.path.isfile(config_filename):
+        print(f"Error: Config file '{config_filename}' does not exist.")
+        sys.exit(1)
+        
+    config_data = configparser.ConfigParser()
+    config_data.read(config_filename)
+    
+    if DEBUG:
+        config["source_file"]   = config_data['debug']['debug_sentence_file']
+        config["output_folder"] = config_data['debug']['debug_output_folder']
+        config["media_folder"]  = config_data['debug']['debug_media_folder']
+    else:
+        config["source_file"]   = config_data['global']['sentence_file']
+        config["output_folder"] = config_data['global']['output_folder']
+        config["media_folder"]  = config_data['global']['media_folder']
 
 # we're going to remove XML tags on the fly in sentences before
 # outputting them to the CSV
@@ -53,8 +59,8 @@ def get_translation(sentence):
         print(f"Message: {e}")
         return "<NO TRANSLATION AVAILABLE>"
 
-def generate_image(sentence, output_folder, timestamp):
-    if debug:
+def generate_image(sentence, timestamp):
+    if DEBUG:
         return 'debug_dummy_image_filename.png'
     
     try:
@@ -68,7 +74,8 @@ def generate_image(sentence, output_folder, timestamp):
         random_string = get_random_string(5)
         image_filename = f"{'_'.join(sentence.split()[:3])}-{timestamp}-{random_string}.png"
         image_filename = re.sub('[^A-Za-z0-9.]+', '', image_filename)
-        image_filepath = os.path.join(output_folder, image_filename)
+        image_filepath = os.path.join(config["media_folder"], image_filename)
+        
         # Download and save the image from the URL
         import requests
         image_data = requests.get(image_url).content
@@ -80,8 +87,8 @@ def generate_image(sentence, output_folder, timestamp):
         print(f"Error generating image: {e}")
         return ""
 
-def generate_audio(sentence, output_folder, timestamp):
-    if debug:
+def generate_audio(sentence, timestamp):
+    if DEBUG:
         return 'debug_dummy_audio_filename.mp3'
     
     try:
@@ -91,7 +98,7 @@ def generate_audio(sentence, output_folder, timestamp):
         random_string = get_random_string(5)
         audio_filename = f"{'_'.join(sentence.split()[:3])}-{timestamp}-{random_string}.mp3"
         audio_filename = re.sub('[^A-Za-z0-9.]+', '', audio_filename)
-        audio_filepath = os.path.join(output_folder, audio_filename)
+        audio_filepath = os.path.join(config["media_folder"], audio_filename)
         
         audio.save(audio_filepath)
         
@@ -102,7 +109,7 @@ def generate_audio(sentence, output_folder, timestamp):
 
 def generate_example_sentence(word):
     fallback_return = f"{word} er meget almindeligt i Danmark."
-    #if debug:
+    #if DEBUG:
     #    return fallback_return
     
     try:
@@ -117,22 +124,22 @@ def generate_example_sentence(word):
         print(f"Error generating example sentence: {e}")
         return fallback_return
 
-def process_source_file(input_file, output_folder, media_folder):
+def process_source_file():
     # Create output folder structure
-    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(config["output_folder"], exist_ok=True)
 
     # do not try to create media folder
-    if not os.path.isdir(media_folder):
-        print(f"Media folder does not exist: {media_folder}")
+    if not os.path.isdir(config["media_folder"]):
+        print(f"Media folder does not exist: {config['media_folder']}")
         sys.exit(1)
 
     # Generate CSV filename
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     csv_filename = f"DanishSentences-{timestamp}.csv"
-    csv_filepath = os.path.join(output_folder, csv_filename)
+    csv_filepath = os.path.join(config["output_folder"], csv_filename)
 
     # Process input file
-    with open(input_file, 'r', encoding='utf-8') as file:
+    with open(config["source_file"], 'r', encoding='utf-8') as file:
         lines = file.readlines()
 
     csv_data = []
@@ -161,10 +168,10 @@ def process_source_file(input_file, output_folder, media_folder):
         clean_translation = clean_html(translation)
         
         # Generate image
-        image_filename = '<img src=\'' + generate_image(clean_translation, media_folder, timestamp) + '\'>'
+        image_filename = '<img src=\'' + generate_image(clean_translation, timestamp) + '\'>'
         
         # Generate audio
-        audio_filename = '[sound:' + generate_audio(clean_sentence, media_folder, timestamp) + ']'
+        audio_filename = '[sound:' + generate_audio(clean_sentence, timestamp) + ']'
 
         # Add to CSV data
         csv_data.append({
@@ -188,40 +195,21 @@ def process_source_file(input_file, output_folder, media_folder):
     print(f"Processing complete. CSV file saved at: {csv_filepath}")
 
 if __name__ == "__main__":
-    config_file = CONFIG_FILE
 
+    config_filename = CONFIG_FILE
+    
     # check command line args
     if len(sys.argv) > 2:
-        print("Usage: python script.py [config file]")
+        print("Usage: python script.py [config filename]")
         sys.exit(1)
     elif len(sys.argv) == 2:
-        config_file = sys.argv[1]
+        config_filename = sys.argv[1]
 
     # read config
-    if not os.path.isfile(config_file):
-        print(f"Error: Config file '{config_file}' does not exist.")
-        sys.exit(1)
-    
-    config = configparser.ConfigParser()
-    config.read(config_file)
-    
-    source_file   = config['global']['sentence_file']
-    output_folder = config['global']['output_folder']
-    media_folder  = config['global']['media_folder']
-    
-    debug = config['debug'].getboolean('debug')
-    if debug:
-        if config['debug']['debug_sentence_file']:
-            source_file = config['debug']['debug_sentence_file']
-            
-        if config['debug']['debug_output_folder']:
-            output_folder = config['debug']['debug_output_folder']
-            
-        if config['debug']['debug_media_folder']:
-            media_folder = config['debug']['debug_media_folder']
+    get_config(config_filename)
 
-    if not os.path.isfile(source_file):
-        print(f"Error: Source file '{source_file}' does not exist.")
+    if not os.path.isfile(config["source_file"]):
+        print(f"Error: Source file {config['source_file']} does not exist.")
         sys.exit(1)
 
-    process_source_file(source_file, output_folder, media_folder)
+    process_source_file()
