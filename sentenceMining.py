@@ -53,7 +53,7 @@ def get_random_string(n):
 
 def get_translation(sentence):    
     try:
-        return translator.translate_text(sentence, source_lang="da", target_lang="en-gb").text
+        return translator.translate_text(sentence, source_lang="da", target_lang="de").text
     except Exception as e:
         print(f"Failed translating sentence: <{sentence}>")
         print(f"Message: {e}")
@@ -65,7 +65,7 @@ def generate_image(sentence, timestamp):
     
     try:
         # Generate image prompt
-        response = client.images.generate(prompt=f"Et realistisk fotografi, der afbilder: '{sentence}'. Fotografiet skulle vise en begivenhed som finder sted i Danmark.",
+        response = client.images.generate(prompt=f"Et realistisk billede, der viser: '{sentence}'. Billedet skulle vise en begivenhed, som finder sted i Danmark.",
         model="dall-e-3",
         n=1)
         image_url = response.data[0].url
@@ -168,7 +168,7 @@ def process_source_file():
         clean_translation = clean_html(translation)
         
         # Generate image
-        image_filename = '<img src=\'' + generate_image(clean_translation, timestamp) + '\'>'
+        image_filename = '<img src=\'' + generate_image(clean_sentence, timestamp) + '\'>'
         
         # Generate audio
         audio_filename = '[sound:' + generate_audio(clean_sentence, timestamp) + ']'
