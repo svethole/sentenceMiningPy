@@ -7,15 +7,17 @@ import configparser
 import deepl
 import random, string
 from datetime import datetime
-from openai import OpenAI
 from gtts import gTTS
 from dotenv import load_dotenv
+from mistralai import Mistral, UserMessage, SystemMessage
+from mistralai.models import ToolFileChunk
 
 CONFIG_FILE = "sentenceMining.config"
 
 # get secrets
 load_dotenv()
-client = OpenAI(api_key = os.getenv("OPEN_AI_KEY"))
+mistral_model = "mistral-medium-2505"
+client = Mistral(api_key=os.environ.get("MISTRAL_API_KEY"))
 translator = deepl.Translator(os.getenv("DEEPL_KEY"))
 
 DEBUG = os.getenv("DEBUG")
@@ -59,32 +61,56 @@ def get_translation(sentence):
         print(f"Message: {e}")
         return "<NO TRANSLATION AVAILABLE>"
 
-def generate_image(sentence, timestamp):
-    if DEBUG:
-        return 'debug_dummy_image_filename.png'
-    
+def generate_image(prompt, timestamp):
     try:
-        # Generate image prompt
-        response = client.images.generate(prompt=f"Et realistisk billede, der viser: '{sentence}'. Billedet skulle vise en begivenhed, som finder sted i Danmark.",
-        model="dall-e-3",
-        n=1)
-        image_url = response.data[0].url
+        image_agent = client.beta.agents.create(
+            model="mistral-medium-latest",
+            name="Sentence Mining Image Generation Agent",
+            description="Agent to be used with SentenceMining.py",
+            instructions="Create a realistic image, set in Denmark, no text in image",
+            tools=[{"type": "image_generation"}],
+            completion_args={
+                "temperature": 0.3,
+                "top_p": 0.95,
+            }
+        )
+        response = client.beta.conversations.start(
+            agent_id=image_agent.id,
+            inputs=f"Generate an image adhering to the following instructions: {prompt}",
+            stream=False
+        )
 
-        # Save the image file
-        random_string = get_random_string(5)
-        image_filename = f"{'_'.join(sentence.split()[:3])}-{timestamp}-{random_string}.png"
-        image_filename = re.sub('[^A-Za-z0-9.]+', '', image_filename)
-        image_filepath = os.path.join(config["media_folder"], image_filename)
-        
-        # Download and save the image from the URL
-        import requests
-        image_data = requests.get(image_url).content
-        with open(image_filepath, 'wb') as file:
-            file.write(image_data)
+        image_paths = []
+        if hasattr(response, 'outputs'):
+            for output in response.outputs:
+                if hasattr(output, 'content'):
+                    if isinstance(output.content, list):
+                        for i, chunk in enumerate(output.content):
+                            if isinstance(chunk, ToolFileChunk):
+                                try:
+                                    # Save the image file
+                                    random_string = get_random_string(5)
+                                    image_filename = f"{'_'.join(prompt.split()[:3])}-{timestamp}-{random_string}.png"
+                                    image_filename = re.sub('[^A-Za-z0-9.]+', '', image_filename)
+                                    image_filepath = os.path.join(config["media_folder"], image_filename)
 
-        return image_filename
+                                    file_bytes = client.files.download(file_id=chunk.file_id).read()
+                                    with open(image_filepath, "wb") as file:
+                                        file.write(file_bytes)
+                                    image_paths.append(image_filename)
+                                except Exception as e:
+                                    print(f"Error processing image chunk: {str(e)}")
+                    else:
+                        print(f"Content is not a list: {output.content}")
+        if image_paths:
+            return image_paths[0]
+        else:
+            print("No images were generated")
+            return ""
     except Exception as e:
-        print(f"Error generating image: {e}")
+        print(f"Error during image generation: {str(e)}")
+        if hasattr(e, '__dict__'):
+            print(f"Error details: {e.__dict__}")
         return ""
 
 def generate_audio(sentence, timestamp):
@@ -113,13 +139,17 @@ def generate_example_sentence(word):
     #    return fallback_return
     
     try:
-        response = client.chat.completions.create(model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are an assistant skilled in creating natural Danish sentences."},
-            {"role": "user", "content": f"Generate a natural Danish sentence using the expression '{word}'."}
-        ],
-        max_tokens=50)
-        return response.choices[0].message.content.strip()
+        chat_response = client.chat.complete(
+            model="mistral-medium-latest",
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Generate a single Danish sentence using the expression '{word}', that I can use as is for a language-learning flashcard. I only want a single Danish sentence, nothing else."
+                },
+            ],
+            safe_prompt=True,
+        )
+        return chat_response.choices[0].message.content.strip()
     except Exception as e:
         print(f"Error generating example sentence: {e}")
         return fallback_return
@@ -151,7 +181,8 @@ def process_source_file():
         if not line:
             continue
 
-        if '**' in line:  # Sentence with focus word
+        regex = re.compile(r'\*\*(.*?)\*\*')
+        if regex.search(line):  # Sentence with focus word
             sentence = line.replace('**', '<b>', 1).replace('**', '</b>', 1)
             word = re.search(r'\*\*(.*?)\*\*', line).group(1)
         else:  # Single word
@@ -183,7 +214,7 @@ def process_source_file():
         })
         
         # we don't want to run into rate limits, they're usually 5 images per 1 minute for OpenAI, so sleeping for ten seconds should do the trick
-        time.sleep(10)
+        time.sleep(1)
 
     # Write CSV file
     with open(csv_filepath, 'w', encoding='utf-8', newline='') as csvfile:
